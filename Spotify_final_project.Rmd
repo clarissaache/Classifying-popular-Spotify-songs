@@ -1,0 +1,286 @@
+---
+title: "Spotify"
+author: "Clarissa Ache Cabello"
+date: "11/15/2021"
+output: pdf_document
+---
+
+```{r}
+rm(list = ls())
+library(arm)
+library(pROC)
+library(e1071)
+library(caret)
+library(nnet)
+library(knitr)
+library(MASS)
+library(ggplot2)
+
+songs <- read.csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-01-21/spotify_songs.csv')
+summary(songs)
+```
+```{r}
+songs$track_album_release_date = as.Date(songs$track_album_release_date)
+hist(songs$track_album_release_date, breaks=10)
+
+songs$playlist_genre = as.factor(songs$playlist_genre)
+songs$playlist_subgenre = as.factor(songs$playlist_subgenre)
+songs$mode= factor(songs$mode)
+
+table(songs$playlist_genre)
+table(songs$playlist_subgenre)
+
+# my categories are almost perfectly even!
+```
+# About my variables:
+My response variable is the playlist_genre (only 5 categories)
+Another option for my response variable, for which I would need a different model to study, is using the SUBgenre, there are 24 categories tho. And I'd need a hierarchical level.
+I want to predict the genre of a song using the track measures, perceptual measures, and other descriptors that spotify provides.
+
+```{r}
+###### Exploratory data analysis
+#let's look at associations of GENRE with various predictors.
+#Ignore all the post-test variables
+#let's start looking at plots with continuous predictors
+
+ggplot(songs,aes(x=playlist_genre, y=track_popularity, fill=playlist_genre)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Greens") +
+  labs(x="Song Genre",y="Popularity Score 0-100") + 
+  theme_classic() + theme(legend.position="none")
+
+ggplot(songs,aes(x=playlist_genre, y=energy, fill=playlist_genre)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Greens") +
+  labs(x="Song Genre",y="Energy 0-1") + 
+  theme_classic() + theme(legend.position="none")
+
+ggplot(songs,aes(x=playlist_genre, y=key, fill=playlist_genre)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Greens") +
+  labs(x="Song Genre",y="Key 0-12") + 
+  theme_classic() + theme(legend.position="none")
+
+ggplot(songs,aes(x=playlist_genre, y=loudness, fill=playlist_genre)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Greens") +
+  labs(x="Song Genre",y="Loudness -60-0, in Db") + 
+  theme_classic() + theme(legend.position="none")
+
+# mode is binary
+
+ggplot(songs,aes(x=playlist_genre, y=speechiness, fill=playlist_genre)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Greens") +
+  labs(x="Song Genre",y="Speechiness 0-1") + 
+  theme_classic() + theme(legend.position="none")
+
+ggplot(songs,aes(x=playlist_genre, y=acousticness, fill=playlist_genre)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Greens") +
+  labs(x="Song Genre",y="Acousticness (confidence)") + 
+  theme_classic() + theme(legend.position="none")
+
+ggplot(songs,aes(x=playlist_genre, y=instrumentalness, fill=playlist_genre)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Greens") +
+  labs(x="Song Genre",y="Instrumentalness") + 
+  theme_classic() + theme(legend.position="none")
+
+ggplot(songs,aes(x=playlist_genre, y=liveness, fill=playlist_genre)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Greens") +
+  labs(x="Song Genre",y="Liveness (probability of audience present)") + 
+  theme_classic() + theme(legend.position="none")
+
+ggplot(songs,aes(x=playlist_genre, y=valence, fill=playlist_genre)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Greens") +
+  labs(x="Song Genre",y="Valence 0-1") + 
+  theme_classic() + theme(legend.position="none")
+
+ggplot(songs,aes(x=playlist_genre, y=tempo, fill=playlist_genre)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Greens") +
+  labs(x="Song Genre",y="Tempo in BPM") + 
+  theme_classic() + theme(legend.position="none")
+
+ggplot(songs,aes(x=playlist_genre, y=duration_ms, fill=playlist_genre)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Greens") +
+  labs(x="Song Genre",y="Duration in milliseconds") + 
+  theme_classic() + theme(legend.position="none")
+
+
+```
+
+```{r}
+#now some categorical predictors
+table(songs$playlist_genre, songs$mode)
+prop.table(table(songs$playlist_genre, songs$mode), 2)
+prop.table(table(songs$playlist_genre, songs$mode), 1)*100 #gives the row percentages
+chisq.test(table(songs$playlist_genre, songs$mode))
+```
+
+```{r}
+# Center all continous variables
+
+X <- c('track_popularity', 'danceability', 'energy', 'key', 'loudness', 'speechiness', 'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo', 'duration_ms')
+for (val in X) {
+  songs[[val]]<-as.numeric(songs[[val]])
+  songs[[val]]<-songs[[val]] - mean(songs[[val]])
+}
+summary(songs)
+
+```
+
+```{r}
+###### Model fitting
+
+#fit a multinomial regression.  note that viewcat = 1 is the reference level.
+genres1 <- multinom(playlist_genre ~ track_popularity + danceability + energy + key + loudness + speechiness + acousticness + instrumentalness + liveness + valence + tempo + duration_ms + mode, data=songs)
+
+
+summary(genres1)
+exp(coef(genres1))
+
+```
+With the exponentiated values, we can observe that some of this variables are not great a differentiating songs from different genres. 
+
+Remember the goal of this is *prediction*, and also understanding a bit what makes a song in this different genres... but, for example, if we look at the Duration, coefficients for each category are pretty much the same number... that means that holding all variables constant it is impossible to infer the genre of a song only based on duration (and that is just true)... so I am going to remove Duration from the model and also maybe Tempo and Popularity.
+
+I am also interested in interactions, so lets do a stepwise!
+
+```{r}
+output1 <- summary(genres1)
+z_value <- output1$coefficients/output1$standard.errors
+p_value <- (1 - pnorm(abs(z_value), 0, 1))*2 
+#we are using two-tailed z test, that is, a normal approximation
+full_summary1 <- lapply(c('latin', 'pop','r&b','rap', 'rock'), function(x) rbind(output1$coefficients[as.character(x),],
+                                                 output1$standard.errors[as.character(x),],
+                                                 z_value[as.character(x),],
+                                                 p_value[as.character(x),]))
+kable(lapply(full_summary1,function(x) {rownames(x) <- c("Coefficient","Std. Errors","z-value","p-value"); x}))
+#too many p-values to check simultaneously, let's use deviance test instead
+
+```
+# Model 1
+So everything is veeeery statistically significant, but which variables are actually scientifically useful??? 
+
+```{r}
+# How do I know if this model is good for prediction?
+#Need to test it out :) 
+
+#split data in train and test
+dt <- sort(sample(nrow(songs), nrow(songs)*.7))
+train1<-songs[dt,]
+test1<-songs[-dt,]
+
+table(train1$playlist_genre)/nrow(train1)
+table(test1$playlist_genre)/nrow(test1)
+```
+
+```{r}
+###### Predictions
+#predicted probabilities for cases in the model
+predprobs <- fitted(genres1) 
+#look at first five rows just to see what results
+predprobs[1:5,]
+
+```
+
+```{r}
+predict(genres1, test1)
+
+```
+
+```{r}
+## Accuracy
+pred_classes <- predict(genres1)
+Conf_mat <- confusionMatrix(as.factor(pred_classes),as.factor(songs$playlist_genre))
+Conf_mat$table
+Conf_mat$overall["Accuracy"];
+Conf_mat$byClass[,c("Sensitivity","Specificity")]
+
+
+```
+# Accuracy of my first model is pretty bad!
+
+```{r}
+
+## Individual ROC curves for the different levels
+#here we basically treat each level as a standalone level
+par(mfcol = c(3,2))
+roc((songs$playlist_genre=='edm'),predprobs[,1],plot=T,print.thres="best",legacy.axes=T,print.auc =T,
+    col="red3",percent=T,main="Edm")
+roc((songs$playlist_genre=='latin'),predprobs[,2],plot=T,print.thres="best",legacy.axes=T,print.auc =T,
+    col="gray3",percent=T,main="Latin")
+roc((songs$playlist_genre=='pop'),predprobs[,2],plot=T,print.thres="best",legacy.axes=T,print.auc =T,
+    col="green3",percent=T,main="Pop")
+roc((songs$playlist_genre=='r&b'),predprobs[,2],plot=T,print.thres="best",legacy.axes=T,print.auc =T,
+    col="blue3",percent=T,main="R&B")
+roc((songs$playlist_genre=='rap'),predprobs[,2],plot=T,print.thres="best",legacy.axes=T,print.auc =T,
+    col="blue3",percent=T,main="Rap")
+roc((songs$playlist_genre=='rock'),predprobs[,2],plot=T,print.thres="best",legacy.axes=T,print.auc =T,
+    col="blue3",percent=T,main="Rock")
+
+#we can also combine them into a single plot
+```
+So, yeah. EDM is easier to identify and most often confused with Pop and Latin...
+R&B is more often confused with Rap than other genres.
+Pop is just hard to identify lol but its the least confused with rock.. reminds me of the pop vs rock era in MTV in the 90s/2000s... 
+
+# LETS TRY TO FIT A BETTER MODEL WITH INTERACTIONS...
+
+```{r}
+# Want to make this model better so I want to check interactions that might be helpful
+
+#nullModel <- multinom(playlist_genre ~ track_popularity + danceability + energy + key + loudness + speechiness + acousticness + instrumentalness + liveness + valence + tempo + duration_ms + mode, data=songs)
+
+#fullModel <- multinom(playlist_genre ~ track_popularity + danceability*energy*speechiness*acousticness*instrumentalness +liveness + valence + tempo + duration_ms + mode + key + loudness, data=songs)
+
+#stepwise <- step(nullModel,scope = formula(fullModel),direction="both",trace=0)
+#stepwise$call
+
+genres2 = multinom(formula = playlist_genre ~ track_popularity + danceability + 
+    energy + loudness + speechiness + acousticness + instrumentalness + 
+    liveness + valence + tempo + duration_ms + mode + danceability:energy + 
+    energy:speechiness + danceability:instrumentalness + energy:instrumentalness + 
+    energy:acousticness + danceability:acousticness + acousticness:instrumentalness + 
+    speechiness:instrumentalness + danceability:speechiness + 
+    speechiness:acousticness + danceability:energy:acousticness + 
+    energy:acousticness:instrumentalness + danceability:energy:instrumentalness + 
+    danceability:energy:speechiness + energy:speechiness:acousticness + 
+    speechiness:acousticness:instrumentalness + danceability:speechiness:acousticness + 
+    danceability:acousticness:instrumentalness + danceability:energy:acousticness:instrumentalness, 
+    data = train1)
+summary(genres2)
+```
+
+```{r}
+## Accuracy of model 2
+
+pred_classes2 <- predict(genres2, test1)
+Conf_mat2 <- confusionMatrix(as.factor(pred_classes2),as.factor(test1$playlist_genre))
+Conf_mat2$table
+Conf_mat2$overall["Accuracy"];
+Conf_mat2$byClass[,c("Sensitivity","Specificity")]
+
+```
+# Second multinomial regresion (parametric) is still shitty! But at least it is easier to interpret.
+So accuracy only improved 2%, this is still bad!
+I need to model this in a different way 
+I wish I knew machine learning...
+
+
+
+*QUESTIONS FOR MICHAEL*
+
+* How do I do bootstrapping? Is the tree modeling functions doing it?
+
+* If my classification model has high AUC but low Accuracy, is it because I have more than 2 levels? and not all levels are predicted with the same accuracy?
+
+* What is the difference between MeanDecreaseGini and MeanDecreaseAccuracy? For random forest...
+
+
+<done>

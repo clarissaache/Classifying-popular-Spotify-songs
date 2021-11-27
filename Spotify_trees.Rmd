@@ -1,0 +1,164 @@
+---
+title: "trees"
+author: "Clarissa Ache Cabello"
+date: "11/20/2021"
+output: pdf_document
+---
+
+```{r}
+rm(list = ls())
+library(arm)
+library(pROC)
+library(e1071)
+library(caret)
+songs <- read.csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-01-21/spotify_songs.csv')
+summary(songs)
+```
+
+```{r}
+songs$track_album_release_date = as.Date(songs$track_album_release_date)
+songs$playlist_genre = as.factor(songs$playlist_genre)
+songs$playlist_subgenre = as.factor(songs$playlist_subgenre)
+songs$mode= factor(songs$mode)
+#centering
+X <- c('track_popularity', 'danceability', 'energy', 'key', 'loudness', 'speechiness', 'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo', 'duration_ms')
+for (val in X) {
+  songs[[val]]<-as.numeric(songs[[val]])
+  songs[[val]]<-songs[[val]] - mean(songs[[val]])
+}
+summary(songs)
+```
+```{r}
+# How do I know if this model is good for prediction?
+#Need to test it out :) 
+
+#split data in train and test
+dt <- sort(sample(nrow(songs), nrow(songs)*.7))
+train1<-songs[dt,]
+test1<-songs[-dt,]
+
+table(train1$playlist_genre)/nrow(train1)
+table(test1$playlist_genre)/nrow(test1)
+```
+Test and Train look pretty balanced!
+
+```{r}
+###### CART
+library(tree)
+
+genres_cart <- tree(playlist_genre ~ track_popularity + danceability + energy + key + loudness + speechiness + acousticness + instrumentalness + liveness + valence + tempo + duration_ms + mode, data=train1)
+
+summary(genres_cart)
+plot(genres_cart)
+text(genres_cart)
+genres_cart
+head(predict(genres_cart,test1, type="class"))
+
+## Confusion matrix
+Conf_mat_cart <- confusionMatrix(predict(genres_cart,test1, type="class"),
+                                 as.factor(test1$playlist_genre),positive = "1")
+Conf_mat_cart$table 
+
+Conf_mat_cart$overall["Accuracy"] #compare to Conf_mat$overall["Accuracy"]
+
+Conf_mat_cart$byClass[c("Sensitivity","Specificity")]
+
+## ROC curve
+roc(test1$playlist_genre,predict(genres_cart,test1, type="vector")[,2],plot=T,print.thres="best",
+    legacy.axes=T,print.auc =T,col="red3")
+
+```
+# CART
+So, within sample the Area under the curve: 0.7561!
+*Accuracy = 0.3625381*
+Sucks!!
+I also got NAs for sensitivity and specificity :(
+This is way better than the one we had before. Lets see if it does well with out of sample data.
+
+```{r}
+###### Bagging
+library(randomForest)
+
+genres_bagg <- randomForest(as.factor(playlist_genre) ~ track_popularity + danceability + energy + key + loudness + speechiness + acousticness + instrumentalness + liveness + valence + tempo + duration_ms + mode, data=train1, mtry=4)
+
+genres_bagg
+
+```
+
+```{r}
+## Confusion matrix
+Conf_mat_bagg <- confusionMatrix(predict(genres_bagg,test1,type="class"),
+                                 as.factor(test1$playlist_genre),positive = "1")
+Conf_mat_bagg$table 
+Conf_mat_bagg$overall["Accuracy"]
+
+Conf_mat_bagg$byClass[,1:2]
+
+## ROC curve
+roc(test1$playlist_genre,predict(genres_bagg,test1,type="prob")[,2],plot=T,print.thres="best",
+    legacy.axes=T,print.auc =T,col="red3")
+```
+
+Oh! *56%*, that waaay better
+Some genres are easier to specify than others... for example, pop's sensitivity is 0.32, the lowest, but for Rock, its 76%!
+In terms of specificity, everything is above the 89% mark... its easier to recognize what is not a genre of course.
+
+```{r}
+###### Random forest
+
+genres_ranfo <- randomForest(as.factor(playlist_genre) ~ track_popularity + danceability + energy + key + loudness + speechiness + acousticness + instrumentalness + liveness + valence + tempo + duration_ms + mode, data=train1, importance =TRUE)
+
+genres_ranfo
+varImpPlot(genres_ranfo)
+
+#MeanDecreaseAccuracy: mean decrease of accuracy in predictions when the variable is excluded. 
+#MeanDecreaseGini: measure of total decrease in node impurity that results from splits over that variable, averaged over all trees
+#importance(genres_ranfo)
+
+## Confusion matrix
+Conf_mat_rf <- confusionMatrix(predict(genres_ranfo,test1, type="response"),
+                               as.factor(test1$playlist_genre),positive = "1")
+Conf_mat_rf$table #compare to Conf_mat$table
+Conf_mat_rf$overall["Accuracy"]
+Conf_mat_rf$byClass[c("Sensitivity","Specificity")]
+
+## ROC curve
+roc(test1$playlist_genre,predict(genres_ranfo, test1,type="prob")[,2],plot=T,print.thres="best",
+    legacy.axes=T,print.auc =T,col="red3")
+#worse than logistic regression, comparable to cart and better than bagging
+```
+# Random Forest
+The accuracy is almost the same as the Bagging... only slightly larger
+Now, with RF we see that the most important variables are (surpricinly) tempo, speechiness, danceability, energy!
+
+AUC is 0.83
+*is it true that when predicting for more than one category, AUC is not very different from the Accuracy?*
+
+```{r}
+###### Boosting
+library(gbm)
+
+genres_boost <- gbm(as.factor(playlist_genre) ~ track_popularity + danceability + energy + key + loudness + speechiness + acousticness + instrumentalness + liveness + valence + tempo + duration_ms + mode, data=train1, distribution="multinomial",n.trees=5000, interaction.depth=2)
+
+summary(genres_boost)
+
+## Confusion matrix
+pred_prob_boost <- predict(genres_boost, test1, n.trees=5000,type="response")
+Conf_boost <- confusionMatrix(as.factor(ifelse(pred_prob_boost >= 0.5, "1","0")),
+                              as.factor(test1$playlist_genre),positive = "1")
+Conf_boost$table
+Conf_boost$overall["Accuracy"]
+#much better accuracy although we probably over fit.
+#use out-of-sample RMSE or cross validation using average RMSE
+Conf_boost$byClass[c("Sensitivity","Specificity")]
+
+## ROC curve
+roc(test1$playlist_genre,pred_prob_boost,
+    plot=T,print.thres="best",legacy.axes=T,print.auc =T,col="red3",  cex.lab=0.3)
+#much better AUC. Again, we may have overfit! 
+
+```
+sooo, I got this message saying that the Multinomial distribution is currently broken for this model in the library... so i guess I cant do this.
+Message: *Warning: Setting `distribution = "multinomial"` is ill-advised as it is currently broken. It exists only for backwards compatibility. Use at your own risk.*
+
+
