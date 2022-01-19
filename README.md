@@ -7,8 +7,10 @@ I will focus in the most common genres (pop, rap, rock, latin, EDM, and R&B), an
 
 There are 12 audio features for each track, including confidence measures like acousticness, liveness, speechiness and instrumentalness, perceptual measures like energy, loudness, danceability and valence (positiveness), and descriptors like duration, tempo, key, and mode. A full data dictionary can be found in the Spotify API site.
 
-[Previous work](https://www.kaylinpavlik.com/classifying-songs-genres/) has been done using decision tree, random forest, and XGBoost models producing the following conclusions. 
+[Previous work](https://www.kaylinpavlik.com/classifying-songs-genres/) has been done using decision tree, random forest, and XGBoost models producing the following conclusions:
+
 "The random forest model was able to classify ~54% of songs into the correct genre, while the individual decision tree shed light on which audio features were most relevant for classifying each genre:
 Rap is speechy. Rock, you can’t dance to it. EDM has high tempo. R&B makes long songs. Latin is very danceable. Pop is everything else, hard to describe."
+
 
 My analysis will try to reproduce these outcomes but using a lower-level regression model (which will probably not be as good) and some other better-performing models to predict the genre classification.
