@@ -14,3 +14,5 @@ Rap is speechy. Rock, you can’t dance to it. EDM has high tempo. R&B makes lon
 
 
 My analysis will try to reproduce these outcomes but using a lower-level regression model (which will probably not be as good) and some other better-performing models to predict the genre classification.
+
+More outcomes of this analysis can be found [here](https://github.com/clarissaache/Classifying-popular-Spotify-songs/blob/main/finalprojectIDS702.pdf)
